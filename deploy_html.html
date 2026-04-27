@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta name="theme-color" content="#3B82F6"/>
+  <title>My Command Center</title>
+  <!-- PWA manifest inline -->
+  <link rel="manifest" href="data:application/json,{&quot;name&quot;:&quot;My Command Center&quot;,&quot;short_name&quot;:&quot;Command&quot;,&quot;start_url&quot;:&quot;/&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;%23F1F5F9&quot;,&quot;theme_color&quot;:&quot;%233B82F6&quot;}"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Inter',system-ui,sans-serif;background:#F1F5F9;color:#1E293B;}
+    textarea,input,select,button{font-family:inherit;}
+    ::-webkit-scrollbar{width:4px;height:4px;}
+    ::-webkit-scrollbar-track{background:#F1F5F9;}
+    ::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:2px;}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script type="text/babel">
+const {useState,useEffect,useRef,useCallback}=React;
+const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const PNAMES=["Fajr","Dhuhr","Asr","Maghrib","Isha"];
+const fmt=(h,m)=>{const p=h>=12?"PM":"AM",d=h>12?h-12:h===0?12:h;return`${d}:${String(m).padStart(2,"0")} ${p}`;};
+const fmtT=v=>{if(!v)return"";const[h,m]=v.split(":").map(Number);return fmt(h,m||0);};
+const pMin=t=>{if(!t)return 9999;const[h,m]=t.split(":").map(Number);return h*60+m;};
+const B=(bg,c,x={})=>({background:bg,color:c,border:"none",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:600,cursor:"pointer",...x});
+const INP={width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid #E2E8F0",fontSize:12,boxSizing:"border-box",fontFamily:"inherit",outline:"none"};
+const CARD={background:"white",borderRadius:12,border:"1px solid #E2E8F0",overflow:"hidden",marginBottom:10};
+const PIL=(a,c)=>({padding:"4px 9px",borderRadius:16,border:`1px solid ${a?c:"#E2E8F0"}`,background:a?c+"22":"#F8FAFC",color:a?c:"#94A3B8",fontSize:11,fontWeight:600,cursor:"pointer"});
+const LS_KEY="mcc_v1";
+const load=k=>{try{const v=localStorage.getItem(LS_KEY);return v?JSON.parse(v)[k]:null;}catch{return null;}};
+const save=(k,v)=>{try{const d=JSON.parse(localStorage.getItem(LS_KEY)||"{}");localStorage.setItem(LS_KEY,JSON.stringify({...d,[k]:v}));}catch{}};
+
+function App(){
+  const[view,setView]=useState("today");
+  const[wTab,setWTab]=useState("habits");
+  const[now,setNow]=useState(new Date());
+  const[apiKey,setApiKey]=useState(()=>load("apiKey")||"");
+  const[brief,setBrief]=useState("");
+  const[briefLoad,setBriefLoad]=useState(false);
+  const[showSet,setShowSet]=useState(false);
+  const[showQA,setShowQA]=useState(false);
+  const[qaText,setQaText]=useState("");
+  const[qaRes,setQaRes]=useState(null);
+  const[qaLoad,setQaLoad]=useState(false);
+  const[listening,setListening]=useState(false);
+  const[family,setFamily]=useState(()=>load("family")||[{id:1,name:"Me",color:"#3B82F6",emoji:"👩‍💼"},{id:2,name:"Child 1",color:"#16A34A",emoji:"👦"},{id:3,name:"Child 2",color:"#9333EA",emoji:"👧"},{id:4,name:"Parent",color:"#EA580C",emoji:"👩‍🦳"}]);
+  const[actF,setActF]=useState(()=>load("actF")||[1,2,3,4]);
+  const[newName,setNewName]=useState("");
+  const[events,setEvents]=useState(()=>load("events")||[{id:1,pid:1,title:"Morning Planning",startH:9,startM:0,loc:""},{id:2,pid:4,title:"Doctor Appointment",startH:10,startM:30,loc:"Clinic"},{id:3,pid:1,title:"Client Call",startH:13,startM:0,loc:"Teams"},{id:4,pid:3,title:"School Activity",startH:14,startM:0,loc:"School"},{id:5,pid:2,title:"Sports Practice",startH:16,startM:0,loc:"Park"}]);
+  const[fluids,setFluids]=useState(()=>load("fluids")||[]);
+  const[prayers,setPrayers]=useState(null);
+  const[pDone,setPDone]=useState(()=>load("pDone")||{});
+  const[habits,setHabits]=useState(()=>load("habits")||[{id:"break",e:"🧘",l:"30-Min Break",done:false},{id:"walk",e:"🚶‍♀️",l:"Walk",done:false},{id:"eat",e:"🍽️",l:"Eat on Time",done:false}]);
+  const[mSupps,setMSupps]=useState(()=>load("mSupps")||{"Omega-3":false,"Vitamin D":false,"Calcium":false,"Berberine":false,"Insulinol":false});
+  const[nSupps,setNSupps]=useState(()=>load("nSupps")||{"Magnesium":false});
+  const[exercises,setExercises]=useState(()=>load("exercises")||[{id:1,name:"Walking",emoji:"🚶‍♀️",freq:7,days:DAYS,done:[]}]);
+  const[sleepBed,setSleepBed]=useState(()=>load("sleepBed")||"22:00");
+  const[sleepWake,setSleepWake]=useState(()=>load("sleepWake")||"05:00");
+  const[windDown,setWindDown]=useState(()=>load("windDown")||[{id:1,l:"Phone on Do Not Disturb",done:false},{id:2,l:"Tomorrow reviewed",done:false},{id:3,l:"Clothes ready",done:false},{id:4,l:"Evening prayer",done:false},{id:5,l:"Gratitude written",done:false},{id:6,l:"Night supplement",done:false}]);
+  const[vGoals,setVGoals]=useState(()=>load("vGoals")||["My biggest goal this year","My second goal"]);
+  const[vImages,setVImages]=useState(()=>load("vImages")||[]);
+  const[calTest,setCalTest]=useState("");
+  const[calId,setCalId]=useState(()=>load("calId")||{g:"",ms:""});
+  const fileRef=useRef(null);
+  const goalRef=useRef(null);
+
+  // Persist to localStorage
+  useEffect(()=>save("apiKey",apiKey),[apiKey]);
+  useEffect(()=>save("family",family),[family]);
+  useEffect(()=>save("actF",actF),[actF]);
+  useEffect(()=>save("events",events),[events]);
+  useEffect(()=>save("fluids",fluids),[fluids]);
+  useEffect(()=>save("pDone",pDone),[pDone]);
+  useEffect(()=>save("habits",habits),[habits]);
+  useEffect(()=>save("mSupps",mSupps),[mSupps]);
+  useEffect(()=>save("nSupps",nSupps),[nSupps]);
+  useEffect(()=>save("exercises",exercises),[exercises]);
+  useEffect(()=>save("sleepBed",sleepBed),[sleepBed]);
+  useEffect(()=>save("sleepWake",sleepWake),[sleepWake]);
+  useEffect(()=>save("windDown",windDown),[windDown]);
+  useEffect(()=>save("vGoals",vGoals),[vGoals]);
+  useEffect(()=>save("vImages",vImages),[vImages]);
+  useEffect(()=>save("calId",calId),[calId]);
+
+  useEffect(()=>{const t=setInterval(()=>setNow(new Date()),30000);return()=>clearInterval(t);},[]);
+  useEffect(()=>{
+    fetch(`https://api.aladhan.com/v1/timings/${Math.floor(Date.now()/1000)}?latitude=50.920&longitude=-113.970&method=2&school=1`)
+      .then(r=>r.json()).then(d=>{if(d.data?.timings)setPrayers(d.data.timings);}).catch(()=>{});
+  },[]);
+
+  const nowMin=now.getHours()*60+now.getMinutes();
+  const todayD=DAYS[now.getDay()===0?6:now.getDay()-1];
+  const nextP=prayers?PNAMES.find(p=>pMin(prayers[p])>nowMin)||"Fajr":null;
+  const minTil=p=>{if(!prayers?.[p])return null;let d=pMin(prayers[p])-nowMin;if(d<0)d+=1440;return d;};
+  const totalF=fluids.reduce((s,f)=>s+f.ml,0);
+  const fPct=Math.min(100,Math.round((totalF/2000)*100));
+  const filtEv=events.filter(e=>actF.includes(e.pid));
+  const hours=Array.from({length:14},(_,i)=>i+7);
+  const dateStr=now.toLocaleDateString("en-CA",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+
+  const resM=ev=>{
+    const byId=family.find(m=>m.id===ev.pid);
+    if(byId)return byId;
+    const lo=(ev.title||"").toLowerCase();
+    return family.find(m=>lo.includes(m.name.toLowerCase()))||family[0]||{name:"?",color:"#94A3B8",emoji:"👤"};
+  };
+
+  const score=Math.round((Math.min(1,totalF/2000)*0.25+habits.filter(h=>h.done).length/habits.length*0.35+(prayers?Object.keys(pDone).length/5*0.25:0)+windDown.filter(w=>w.done).length/windDown.length*0.15)*100);
+  const scC=score>=80?"#16A34A":score>=60?"#D97706":"#DC2626";
+
+  const genBrief=async()=>{
+    setBriefLoad(true);
+    const ev=events.map(e=>`${fmt(e.startH,e.startM)} ${e.title}(${resM(e).name})`).join(", ");
+    const ps=prayers?PNAMES.map(p=>`${p}:${prayers[p]}`).join(" "):"";
+    try{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:200,messages:[{role:"user",content:`Warm morning briefing max 70 words. Date:${dateStr}. ${ps} Events:${ev}. Mention prayer time, key events, one motivating sentence.`}]})});const d=await r.json();setBrief(d.content?.[0]?.text||"Could not generate.");}
+    catch{setBrief("Paste your API key in ⚙️ Settings to enable AI briefings.");}
+    setBriefLoad(false);
+  };
+
+  const parseQA=async()=>{
+    if(!qaText.trim())return;setQaLoad(true);
+    try{const names=family.map(m=>m.name).join("/");const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:120,messages:[{role:"user",content:`Extract event. JSON only:{title,personName(one of ${names}),startH,startM(0 or 30),loc}. Text:"${qaText}"`}]})});const d=await r.json();const p=JSON.parse((d.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());const mem=family.find(m=>m.name===p.personName)||family[0];setQaRes({...p,pid:mem?.id});}
+    catch{setQaRes({error:"Could not parse. Check API key."});}
+    setQaLoad(false);
+  };
+
+  const startVoice=useCallback(()=>{
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){alert("Voice works best in Chrome.");return;}
+    const r=new SR();r.lang="en-US";r.continuous=false;r.interimResults=false;
+    r.onresult=e=>{setQaText(e.results[0][0].transcript);setListening(false);};
+    r.onerror=r.onend=()=>setListening(false);
+    r.start();setListening(true);
+  },[]);
+
+  const addMember=()=>{
+    if(!newName.trim())return;
+    const COLS=["#3B82F6","#16A34A","#9333EA","#EA580C","#EC4899","#0891B2","#DC2626","#D97706"];
+    const id=Date.now();
+    setFamily(p=>[...p,{id,name:newName.trim(),color:COLS[family.length%COLS.length],emoji:"👤"}]);
+    setActF(p=>[...p,id]);setNewName("");
+  };
+
+  return(
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100vh",background:"#F1F5F9",color:"#1E293B"}}>
+      {/* HEADER */}
+      <div style={{background:"white",borderBottom:"1px solid #E2E8F0",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:32,height:32,borderRadius:9,background:"linear-gradient(135deg,#3B82F6,#9333EA)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>⚡</div>
+          <div><div style={{fontWeight:800,fontSize:14}}>My Command Center</div><div style={{fontSize:10,color:"#94A3B8"}}>{dateStr}</div></div>
+        </div>
+        <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+          {nextP&&prayers&&<div style={{fontSize:11,background:"#FEF9C3",color:"#92400E",padding:"3px 8px",borderRadius:6,fontWeight:600}}>🕌 {nextP} {minTil(nextP)}m</div>}
+          <div style={{fontSize:12,fontWeight:800,padding:"3px 8px",borderRadius:6,background:scC+"22",color:scC}}>📊 {score}%</div>
+          <div style={{fontSize:11,fontWeight:700,color:"#64748B",background:"#F1F5F9",padding:"4px 8px",borderRadius:6}}>{now.toLocaleTimeString("en-CA",{hour:"2-digit",minute:"2-digit"})}</div>
+          <button onClick={()=>setShowQA(true)} style={B("#3B82F6","white",{padding:"5px 10px"})}>+ Add</button>
+          <button onClick={()=>setShowSet(true)} style={B("#F1F5F9","#64748B",{padding:"5px 9px"})}>⚙️</button>
+        </div>
+      </div>
+
+      <div style={{display:"flex",maxWidth:1100,margin:"0 auto"}}>
+        {/* SIDEBAR */}
+        <div style={{width:176,flexShrink:0,padding:"12px 8px",borderRight:"1px solid #E2E8F0",background:"white",minHeight:"calc(100vh - 56px)",overflowY:"auto"}}>
+          <div style={{marginBottom:14}}>
+            {[["today","📅 Today"],["tomorrow","🌅 Tomorrow"],["week","📆 Week"],["wellness","🌿 Wellness"],["vision","🎯 Vision"],["score","📊 Score"],["calendars","🗓️ Calendars"]].map(([v,l])=>(
+              <button key={v} onClick={()=>setView(v)} style={{display:"block",width:"100%",textAlign:"left",padding:"7px 10px",borderRadius:8,border:"none",background:view===v?"#EFF6FF":"transparent",color:view===v?"#3B82F6":"#64748B",fontWeight:view===v?700:400,fontSize:12,cursor:"pointer",marginBottom:2}}>{l}</button>
+            ))}
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:9,fontWeight:700,color:"#94A3B8",textTransform:"uppercase",letterSpacing:1,marginBottom:7,padding:"0 4px"}}>👨‍👩‍👧‍👦 Family</div>
+            {family.map(m=>(
+              <button key={m.id} onClick={()=>setActF(p=>p.includes(m.id)?p.filter(x=>x!==m.id):[...p,m.id])} style={{display:"flex",alignItems:"center",gap:6,width:"100%",padding:"5px 8px",borderRadius:8,border:"none",background:actF.includes(m.id)?m.color+"22":"transparent",cursor:"pointer",marginBottom:2,opacity:actF.includes(m.id)?1:0.35}}>
+                <div style={{width:7,height:7,borderRadius:"50%",background:m.color,flexShrink:0}}/><span style={{fontSize:11,fontWeight:500}}>{m.emoji} {m.name}</span>
+              </button>
+            ))}
+            <div style={{display:"flex",gap:5,marginTop:6}}>
+              <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addMember()} placeholder="Add member…" style={{...INP,flex:1,fontSize:10,padding:"5px 7px"}}/>
+              <button onClick={addMember} style={B("#3B82F6","white",{padding:"4px 8px",fontSize:11})}>+</button>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:9,fontWeight:700,color:"#94A3B8",textTransform:"uppercase",letterSpacing:1,marginBottom:7,padding:"0 4px"}}>Today</div>
+            <div style={{padding:"3px 8px",marginBottom:7}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:11}}>🫧 Fluids</span><span style={{fontSize:10,fontWeight:700,color:fPct>=100?"#16A34A":"#3B82F6"}}>{totalF}/2000ml</span></div>
+              <div style={{height:4,background:"#E2E8F0",borderRadius:2}}><div style={{height:4,background:fPct>=100?"#16A34A":"#3B82F6",borderRadius:2,width:`${fPct}%`,transition:"width .3s"}}/></div>
+            </div>
+            {habits.map(h=>(
+              <button key={h.id} onClick={()=>setHabits(p=>p.map(x=>x.id===h.id?{...x,done:!x.done}:x))} style={{display:"flex",alignItems:"center",gap:6,width:"100%",padding:"4px 8px",border:"none",background:"transparent",cursor:"pointer",marginBottom:2}}>
+                <span style={{fontSize:11}}>{h.done?"✅":h.e}</span><span style={{fontSize:11,color:h.done?"#94A3B8":"#374151",textDecoration:h.done?"line-through":"none",flex:1,textAlign:"left"}}>{h.l}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* MAIN */}
+        <div style={{flex:1,padding:"12px 14px",minWidth:0,overflowY:"auto"}}>
+          {/* BRIEFING */}
+          <div style={{background:"linear-gradient(135deg,#0F172A,#1E3A5F 50%,#1D4ED8)",borderRadius:12,padding:"12px 16px",marginBottom:12,color:"white",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:9,fontWeight:700,opacity:.6,textTransform:"uppercase",letterSpacing:1.2,marginBottom:5}}>☀️ Morning Briefing</div>
+              {briefLoad?<div style={{fontSize:12,opacity:.7}}>⏳ Generating…</div>:brief?<div style={{fontSize:12,lineHeight:1.6,opacity:.95}}>{brief}</div>:<div style={{fontSize:11,opacity:.6}}>Tap ✨ Generate for your AI daily summary.</div>}
+            </div>
+            <button onClick={genBrief} disabled={briefLoad} style={B("rgba(255,255,255,.15)","white",{border:"1px solid rgba(255,255,255,.25)",flexShrink:0,padding:"5px 11px",fontSize:11})}>{briefLoad?"…":"✨ Gen"}</button>
+          </div>
+
+          {/* TODAY */}
+          {view==="today"&&(
+            <div style={CARD}>
+              <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:700}}>📅 30-Min Blocks</span><span style={{fontSize:11,color:"#94A3B8"}}>{filtEv.length} events</span></div>
+              <div style={{maxHeight:"65vh",overflowY:"auto"}}>
+                {hours.flatMap(h=>[0,30].map(m=>{
+                  const bMin=h*60+m,isNow=nowMin>=bMin&&nowMin<bMin+30,isPast=nowMin>=bMin+30;
+                  const evs=filtEv.filter(e=>e.startH===h&&e.startM===m);
+                  const pAt=prayers?PNAMES.filter(p=>{const[ph,pm]=prayers[p].split(":").map(Number);return ph===h&&pm>=m&&pm<m+30;}):[]; 
+                  return(
+                    <div key={`${h}-${m}`} style={{display:"flex",borderBottom:"1px solid #F8FAFC",background:isNow?"#FFFBEB":"white",minHeight:34}}>
+                      <div style={{width:52,flexShrink:0,padding:"7px 6px",fontSize:9,color:isNow?"#D97706":isPast?"#CBD5E1":"#94A3B8",fontWeight:isNow?700:400,textAlign:"right",borderRight:`2px solid ${isNow?"#FCD34D":"#F1F5F9"}`}}>
+                        {isNow&&<div style={{width:5,height:5,borderRadius:"50%",background:"#F59E0B",marginLeft:"auto",marginBottom:1}}/>}{fmt(h,m)}
+                      </div>
+                      <div style={{flex:1,padding:"4px 8px",display:"flex",flexWrap:"wrap",gap:3,alignItems:"center"}}>
+                        {pAt.map(p=><div key={p} style={{background:"#FEF9C3",borderLeft:"3px solid #F59E0B",borderRadius:5,padding:"2px 7px",fontSize:10,display:"flex",gap:3}}><span>🕌</span><span style={{fontWeight:700,color:"#92400E"}}>{p}</span></div>)}
+                        {evs.map(ev=>{const m=resM(ev);return<div key={ev.id} style={{background:m.color+"22",borderLeft:`3px solid ${m.color}`,borderRadius:5,padding:"2px 7px",fontSize:10,display:"flex",gap:3}}><span>{m.emoji}</span><span style={{fontWeight:600}}>{ev.title}</span>{ev.loc&&<span style={{color:"#94A3B8",fontSize:9}}>· {ev.loc}</span>}</div>;})}
+                      </div>
+                    </div>
+                  );
+                }))}
+              </div>
+            </div>
+          )}
+
+          {/* TOMORROW */}
+          {view==="tomorrow"&&(
+            <div style={CARD}>
+              <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontWeight:700,fontSize:13}}>🌅 Tomorrow's Schedule</div><span style={{fontSize:11,color:"#94A3B8"}}>{filtEv.length} events</span></div>
+              <div style={{padding:"10px 14px"}}>
+                {filtEv.length===0&&<div style={{fontSize:12,color:"#94A3B8",textAlign:"center",padding:20}}>No events — use + Add or connect Google Calendar</div>}
+                {filtEv.map(ev=>{const m=resM(ev);return(
+                  <div key={ev.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:`1px solid ${m.color}44`,background:m.color+"11",marginBottom:7}}>
+                    <div style={{width:36,height:36,borderRadius:9,background:m.color+"22",border:`2px solid ${m.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{m.emoji}</div>
+                    <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{ev.title}</div><div style={{fontSize:11,color:m.color,fontWeight:600,marginTop:1}}>{m.name}{ev.loc?` · ${ev.loc}`:""}</div></div>
+                    <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:13,fontWeight:700,color:"#374151"}}>{fmt(ev.startH,ev.startM)}</div></div>
+                  </div>
+                );})}
+                {prayers&&<div style={{marginTop:10,padding:"10px 12px",background:"#FEF9C3",borderRadius:10,border:"1px solid #FDE68A"}}><div style={{fontSize:11,fontWeight:700,color:"#92400E",marginBottom:6}}>🕌 Prayer Times</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{PNAMES.map(p=><span key={p} style={{fontSize:11,background:"white",border:"1px solid #FDE68A",borderRadius:6,padding:"3px 8px",color:"#92400E",fontWeight:600}}>{p} {fmtT(prayers[p])}</span>)}</div></div>}
+              </div>
+            </div>
+          )}
+
+          {/* WEEK */}
+          {view==="week"&&(
+            <div style={CARD}>
+              <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontWeight:700,fontSize:13}}>📆 This Week</div>
+              <div style={{padding:"10px 14px"}}>
+                {DAYS.map((day,di)=>{
+                  const isToday=todayD===day;
+                  const dayEvs=filtEv.filter((_,i)=>i%7===di);
+                  return(
+                    <div key={day} style={{display:"flex",gap:10,padding:"9px 0",borderBottom:"1px solid #F8FAFC",alignItems:"flex-start"}}>
+                      <div style={{width:48,flexShrink:0}}>
+                        <div style={{fontSize:11,fontWeight:700,color:isToday?"#3B82F6":"#94A3B8",display:"flex",alignItems:"center",gap:4}}>
+                          {isToday&&<div style={{width:6,height:6,borderRadius:"50%",background:"#3B82F6",flexShrink:0}}/>}{day}
+                        </div>
+                        {isToday&&<div style={{fontSize:9,color:"#3B82F6",fontWeight:600}}>Today</div>}
+                      </div>
+                      <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:4}}>
+                        {dayEvs.length>0?dayEvs.map(ev=>{const m=resM(ev);return(
+                          <div key={ev.id} style={{background:m.color+"22",borderLeft:`3px solid ${m.color}`,borderRadius:6,padding:"3px 9px",fontSize:11,display:"flex",gap:4,alignItems:"center"}}>
+                            <span>{m.emoji}</span><span style={{fontWeight:600}}>{ev.title}</span><span style={{fontSize:10,color:"#94A3B8"}}>{fmt(ev.startH,ev.startM)}</span>
+                          </div>
+                        );}): <span style={{fontSize:11,color:"#CBD5E1"}}>No events</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* SCORE */}
+          {view==="score"&&(
+            <div style={CARD}>
+              <div style={{padding:"20px",textAlign:"center",borderBottom:"1px solid #F1F5F9"}}>
+                <div style={{fontSize:10,fontWeight:700,color:"#94A3B8",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Today's Wellness Score</div>
+                <div style={{width:120,height:120,borderRadius:"50%",background:`conic-gradient(${scC} ${score*3.6}deg,#E2E8F0 0deg)`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",boxShadow:"0 4px 20px rgba(0,0,0,.1)"}}>
+                  <div style={{width:90,height:90,borderRadius:"50%",background:"white",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}><div style={{fontSize:28,fontWeight:900,color:scC}}>{score}</div><div style={{fontSize:9,color:"#94A3B8"}}>/ 100</div></div>
+                </div>
+                <div style={{fontSize:14,fontWeight:700,color:scC}}>{score>=80?"🌟 Excellent day!":score>=60?"💪 Good progress!":score>=40?"🌱 Keep going!":"🔄 Let's build momentum"}</div>
+              </div>
+              <div style={{padding:"14px 18px"}}>
+                {[
+                  {label:"🫧 Fluids",val:totalF,max:2000,color:"#3B82F6"},
+                  {label:"🌿 Habits",val:habits.filter(h=>h.done).length,max:habits.length,color:"#16A34A"},
+                  {label:"🏋️ Exercise",val:exercises.filter(e=>e.days.includes(todayD)&&e.done.includes(todayD)).length,max:Math.max(1,exercises.filter(e=>e.days.includes(todayD)).length),color:"#8B5CF6"},
+                  {label:"💊 Supplements",val:Object.values(mSupps).filter(Boolean).length,max:Object.keys(mSupps).length,color:"#EC4899"},
+                  {label:"🕌 Prayers",val:Object.keys(pDone).length,max:5,color:"#F59E0B"},
+                  {label:"🌆 Wind-Down",val:windDown.filter(w=>w.done).length,max:windDown.length,color:"#6366F1"},
+                ].map(row=>(
+                  <div key={row.label} style={{marginBottom:11}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12,fontWeight:600}}>{row.label}</span><span style={{fontSize:11,color:"#64748B"}}>{Math.round((row.val/Math.max(1,row.max))*100)}%</span></div>
+                    <div style={{height:7,background:"#E2E8F0",borderRadius:4,overflow:"hidden"}}><div style={{height:7,background:row.color,borderRadius:4,width:`${Math.min(100,Math.round((row.val/Math.max(1,row.max))*100))}%`,transition:"width .5s"}}/></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* WELLNESS */}
+          {view==="wellness"&&(
+            <div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
+                {["habits","fluids","exercise","supps","sleep","prayers","winddown"].map(t=><button key={t} onClick={()=>setWTab(t)} style={PIL(wTab===t,"#3B82F6")}>{t[0].toUpperCase()+t.slice(1)}</button>)}
+              </div>
+              {wTab==="habits"&&<div style={CARD}><div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontWeight:700,fontSize:13}}>🌿 Daily Habits</div><div style={{padding:"12px 14px",display:"flex",gap:7,flexWrap:"wrap"}}>{habits.map(h=><button key={h.id} onClick={()=>setHabits(p=>p.map(x=>x.id===h.id?{...x,done:!x.done}:x))} style={B(h.done?"#F0FDF4":"#F8FAFC",h.done?"#15803D":"#374151",{border:`1px solid ${h.done?"#86EFAC":"#E2E8F0"}`,padding:"10px 14px",borderRadius:11,minWidth:90,textAlign:"center"})}><div style={{fontSize:22,marginBottom:3}}>{h.done?"✅":h.e}</div><div style={{fontWeight:600,fontSize:11}}>{h.l}</div></button>)}</div></div>}
+              {wTab==="fluids"&&<div style={CARD}>
+                <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontWeight:700,fontSize:13}}>🫧 Daily Fluids</div><span style={{fontSize:11,color:"#94A3B8"}}>{totalF}ml / 2000ml</span></div>
+                <div style={{padding:"14px"}}>
+                  <div style={{height:10,background:"#E2E8F0",borderRadius:5,marginBottom:14,overflow:"hidden"}}><div style={{height:"100%",width:`${fPct}%`,background:fPct>=100?"linear-gradient(90deg,#16A34A,#22C55E)":"linear-gradient(90deg,#3B82F6,#60A5FA)",borderRadius:5,transition:"width .5s"}}/></div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>{[["💧 Water",250],["🍵 Tea",250],["☕ Coffee",250],["🥛 Milk",200],["🥤 Smoothie",350]].map(([l,ml])=><button key={l} onClick={()=>setFluids(p=>[...p,{id:Date.now()+Math.random(),ml,label:l,time:now.toLocaleTimeString("en-CA",{hour:"2-digit",minute:"2-digit"})}])} style={B("#EFF6FF","#1E40AF",{border:"1px solid #BFDBFE",padding:"5px 10px",fontSize:11})}>{l} +{ml}ml</button>)}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:5}}>{fluids.map(f=><span key={f.id} style={{fontSize:10,background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:7,padding:"2px 8px",color:"#1E40AF",display:"flex",alignItems:"center",gap:4}}>{f.label} {f.ml}ml <button onClick={()=>setFluids(p=>p.filter(x=>x.id!==f.id))} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",fontSize:10,padding:0,lineHeight:1}}>✕</button></span>)}</div>
+                  {fPct>=100&&<div style={{marginTop:10,padding:"8px",background:"#DCFCE7",borderRadius:8,fontSize:12,fontWeight:600,color:"#16A34A",textAlign:"center"}}>🎉 Goal reached!</div>}
+                </div>
+              </div>}
+              {wTab==="exercise"&&<div style={CARD}>
+                <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontWeight:700,fontSize:13}}>🏋️ Exercise</div>
+                <div style={{padding:"12px 14px"}}>{exercises.map(e=>{const tp=e.days.includes(todayD),dn=e.done.includes(todayD),wk=e.done.filter(d=>DAYS.includes(d)).length;return(
+                  <div key={e.id} style={{background:dn?"#F0FDF4":tp?"#F8FAFC":"white",border:`1px solid ${dn?"#86EFAC":tp?"#BFDBFE":"#E2E8F0"}`,borderRadius:11,padding:"12px 14px",marginBottom:9}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}><span style={{fontSize:22}}>{e.emoji}</span><div><div style={{fontWeight:700,fontSize:13}}>{e.name}</div><div style={{fontSize:10,color:"#94A3B8"}}>{e.freq}× / week · {wk} done this week</div></div></div>
+                    <div style={{display:"flex",gap:3,marginBottom:8}}>{DAYS.map(d=>{const pl=e.days.includes(d),dn2=e.done.includes(d);return<div key={d} style={{flex:1,textAlign:"center",padding:"3px 0",borderRadius:5,fontSize:9,fontWeight:600,background:dn2?"#DCFCE7":pl?"#DBEAFE":"transparent",color:dn2?"#16A34A":pl?"#3B82F6":"#CBD5E1"}}>{dn2?"✓":d[0]}</div>;})}</div>
+                    {tp&&<button onClick={()=>setExercises(p=>p.map(x=>x.id===e.id?{...x,done:x.done.includes(todayD)?x.done.filter(d=>d!==todayD):[...x.done,todayD]}:x))} style={B(dn?"#DCFCE7":"#3B82F6",dn?"#16A34A":"white",{width:"100%",padding:"7px",fontSize:11,border:dn?"1px solid #86EFAC":"none"})}>{dn?"✅ Done — tap to undo":"✓ Mark today as done"}</button>}
+                  </div>
+                );})}
+                </div>
+              </div>}
+              {wTab==="supps"&&<div style={CARD}>
+                <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontWeight:700,fontSize:13}}>💊 Supplements</div>
+                <div style={{padding:"12px 14px"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:8}}>🌅 Morning (with food)</div>
+                  <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:14}}>{Object.entries(mSupps).map(([k,v])=><button key={k} onClick={()=>setMSupps(p=>({...p,[k]:!p[k]}))} style={{padding:"7px 11px",borderRadius:9,border:`1px solid ${v?"#86EFAC":"#E2E8F0"}`,background:v?"#F0FDF4":"#F8FAFC",cursor:"pointer",display:"flex",alignItems:"center",gap:5}}><span>{v?"✅":"💊"}</span><span style={{fontSize:11,fontWeight:600,color:v?"#16A34A":"#374151",textDecoration:v?"line-through":"none"}}>{k}</span></button>)}</div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:8}}>🌙 Night</div>
+                  <div style={{display:"flex",gap:7}}>{Object.entries(nSupps).map(([k,v])=><button key={k} onClick={()=>setNSupps(p=>({...p,[k]:!p[k]}))} style={{padding:"7px 11px",borderRadius:9,border:`1px solid ${v?"#C4B5FD":"#E2E8F0"}`,background:v?"#F5F3FF":"#F8FAFC",cursor:"pointer",display:"flex",alignItems:"center",gap:5}}><span>{v?"✅":"🌙"}</span><span style={{fontSize:11,fontWeight:600,color:v?"#7C3AED":"#374151",textDecoration:v?"line-through":"none"}}>{k}</span></button>)}</div>
+                  <div style={{marginTop:12,padding:"9px 12px",background:"#FEF9C3",borderRadius:9,fontSize:11,color:"#92400E"}}>💡 Vitamin D with your fattiest meal · Space Calcium and Magnesium apart</div>
+                </div>
+              </div>}
+              {wTab==="sleep"&&<div style={CARD}>
+                <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontWeight:700,fontSize:13}}>🌙 Sleep Routine</div><span style={{fontSize:11,background:"#EEF2FF",color:"#6366F1",padding:"3px 8px",borderRadius:7,fontWeight:600}}>{fmtT(sleepBed)} → {fmtT(sleepWake)}</span></div>
+                <div style={{padding:"14px"}}><div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+                  <div><div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:6}}>🛏️ Bedtime</div><div style={{display:"flex",gap:5}}>{["21:00","22:00"].map(t=><button key={t} onClick={()=>setSleepBed(t)} style={PIL(sleepBed===t,"#6366F1")}>{fmtT(t)}</button>)}</div></div>
+                  <div><div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:6}}>⏰ Wake</div><div style={{display:"flex",gap:5}}>{["04:00","05:00","06:00"].map(t=><button key={t} onClick={()=>setSleepWake(t)} style={PIL(sleepWake===t,"#F59E0B")}>{fmtT(t)}</button>)}</div><div style={{fontSize:9,color:"#94A3B8",marginTop:4}}>🕌 Adjust for Fajr each morning</div></div>
+                </div></div>
+              </div>}
+              {wTab==="prayers"&&<div style={CARD}>
+                <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontWeight:700,fontSize:13}}>🕌 Calgary SE · Hanafi</div><div style={{fontSize:11,color:"#94A3B8"}}>{Object.keys(pDone).length}/5 prayed today</div></div></div>
+                <div style={{padding:"12px 14px"}}>{prayers?<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:7}}>{PNAMES.map(p=>{const isN=p===nextP,done=pDone[p],mins=minTil(p);return(<button key={p} onClick={()=>setPDone(prev=>({...prev,[p]:!prev[p]}))} style={{background:done?"#F0FDF4":isN?"#FFFBEB":"#F8FAFC",border:`1px solid ${done?"#86EFAC":isN?"#FDE68A":"#E2E8F0"}`,borderRadius:9,padding:"10px 12px",cursor:"pointer",textAlign:"left"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:13,fontWeight:800,color:done?"#16A34A":isN?"#D97706":"#1E293B"}}>{p}</span><span>{done?"✅":isN?"⏰":"⬜"}</span></div><div style={{fontSize:12,fontWeight:700,color:done?"#16A34A":isN?"#D97706":"#374151"}}>{fmtT(prayers[p])}</div>{isN&&!done&&mins!==null&&<div style={{fontSize:9,color:"#D97706",marginTop:3,fontWeight:600}}>in {mins} min</div>}</button>);})}</div>:<div style={{fontSize:12,color:"#94A3B8",textAlign:"center",padding:16}}>Loading…</div>}</div>
+              </div>}
+              {wTab==="winddown"&&<div style={CARD}>
+                <div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontWeight:700,fontSize:13}}>🌆 Evening Wind-Down</div><span style={{fontSize:12,fontWeight:700,color:windDown.every(w=>w.done)?"#16A34A":"#64748B"}}>{windDown.filter(w=>w.done).length}/{windDown.length}</span></div>
+                <div style={{padding:"12px 14px"}}>
+                  <div style={{height:5,background:"#E2E8F0",borderRadius:3,marginBottom:10}}><div style={{height:5,background:windDown.every(w=>w.done)?"#16A34A":"#8B5CF6",borderRadius:3,width:`${(windDown.filter(w=>w.done).length/windDown.length)*100}%`,transition:"width .3s"}}/></div>
+                  {windDown.map(w=><button key={w.id} onClick={()=>setWindDown(p=>p.map(x=>x.id===w.id?{...x,done:!x.done}:x))} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 11px",borderRadius:9,border:`1px solid ${w.done?"#86EFAC":"#E2E8F0"}`,background:w.done?"#F0FDF4":"#F8FAFC",cursor:"pointer",marginBottom:5,textAlign:"left"}}><span style={{fontSize:15}}>{w.done?"✅":"⬜"}</span><span style={{fontSize:12,color:w.done?"#16A34A":"#374151",textDecoration:w.done?"line-through":"none"}}>{w.l}</span></button>)}
+                </div>
+              </div>}
+            </div>
+          )}
+
+          {/* VISION */}
+          {view==="vision"&&(
+            <div>
+              <div style={CARD}><div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontWeight:700,fontSize:13}}>🎯 My Goals</div>
+                <div style={{padding:"12px 14px"}}>
+                  {vGoals.map((g,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"7px 10px",borderRadius:8,background:"#EFF6FF",border:"1px solid #BFDBFE",marginBottom:5}}><span>🎯</span><span style={{fontSize:12,fontWeight:600,color:"#1E40AF",flex:1}}>{g}</span><button onClick={()=>setVGoals(p=>p.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:"#CBD5E1",cursor:"pointer"}}>✕</button></div>)}
+                  <div style={{display:"flex",gap:7,marginTop:7}}><input ref={goalRef} placeholder="Add a goal…" style={{...INP,flex:1}}/><button onClick={()=>{if(goalRef.current?.value?.trim()){setVGoals(p=>[...p,goalRef.current.value.trim()]);goalRef.current.value="";}}} style={B("#3B82F6","white",{padding:"7px 12px",fontSize:11})}>+ Add</button></div>
+                </div>
+              </div>
+              <div style={CARD}><div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontWeight:700,fontSize:13}}>🖼️ Vision Images</div><button onClick={()=>fileRef.current?.click()} style={B("#3B82F6","white",{padding:"4px 10px",fontSize:11})}>+ Upload</button></div>
+                <input ref={fileRef} type="file" accept="image/*" multiple onChange={e=>Array.from(e.target.files).forEach(f=>{const r=new FileReader();r.onload=ev=>setVImages(p=>[...p,{id:Date.now()+Math.random(),src:ev.target.result}]);r.readAsDataURL(f);})} style={{display:"none"}}/>
+                <div style={{padding:"12px 14px"}}>
+                  {vImages.length===0?<div onClick={()=>fileRef.current?.click()} style={{border:"2px dashed #BFDBFE",borderRadius:10,padding:"28px 20px",textAlign:"center",cursor:"pointer"}}><div style={{fontSize:28,marginBottom:6}}>🖼️</div><div style={{fontSize:12,color:"#64748B"}}>Upload vision images</div></div>
+                  :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:7}}>{vImages.map(img=><div key={img.id} style={{position:"relative",borderRadius:8,overflow:"hidden",aspectRatio:"1"}}><img src={img.src} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/><button onClick={()=>setVImages(p=>p.filter(x=>x.id!==img.id))} style={{position:"absolute",top:3,right:3,background:"rgba(0,0,0,.6)",border:"none",color:"white",borderRadius:"50%",width:18,height:18,cursor:"pointer",fontSize:10}}>✕</button></div>)}<div onClick={()=>fileRef.current?.click()} style={{border:"2px dashed #BFDBFE",borderRadius:8,aspectRatio:"1",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><span style={{fontSize:20,color:"#94A3B8"}}>+</span></div></div>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* CALENDARS */}
+          {view==="calendars"&&(
+            <div>
+              <div style={{...CARD,border:"1px solid #C4B5FD"}}><div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontWeight:700,fontSize:13}}>🧠 Smart Name Detection</div>
+                <div style={{padding:"12px 14px"}}>
+                  <div style={{fontSize:11,color:"#64748B",marginBottom:10}}>Use one Google account. Include a family member's name in the event title — the app detects it and colour-codes it automatically.</div>
+                  <div style={{background:"#F5F3FF",border:"1px solid #C4B5FD",borderRadius:9,padding:"11px 13px"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#7C3AED",marginBottom:6}}>🧪 Try it — type an event title:</div>
+                    <input value={calTest} onChange={e=>setCalTest(e.target.value)} placeholder="e.g. Khursheed cardiology Thursday 2pm…" style={INP}/>
+                    {calTest.trim()&&(()=>{const f=family.find(m=>calTest.toLowerCase().includes(m.name.toLowerCase()));const a=f||family[0];return<div style={{marginTop:8,display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,background:a.color+"22",border:`1px solid ${a.color}44`}}><span style={{fontSize:17}}>{a.emoji}</span><div><div style={{fontSize:12,fontWeight:700,color:a.color}}>→ {a.name}</div><div style={{fontSize:10,color:"#64748B"}}>{f?"Name detected in title":"No name found — defaults to you"}</div></div></div>;})()}
+                  </div>
+                </div>
+              </div>
+              <div style={CARD}><div style={{padding:"10px 14px",borderBottom:"1px solid #F1F5F9",fontWeight:700,fontSize:13}}>🔧 One-Time Google Calendar Setup</div>
+                <div style={{padding:"12px 14px"}}>
+                  {["Go to console.cloud.google.com","Create a project","Enable Google Calendar API","Create OAuth 2.0 credentials","Add your deployed app URL as redirect URI","Paste your Client ID below"].map((step,i)=><div key={i} style={{display:"flex",gap:9,padding:"7px 0",borderBottom:"1px solid #F8FAFC",alignItems:"center"}}><div style={{width:20,height:20,borderRadius:"50%",background:calId.g?"#DCFCE7":"#EFF6FF",border:`2px solid ${calId.g?"#86EFAC":"#BFDBFE"}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:calId.g?"#16A34A":"#3B82F6",flexShrink:0}}>{calId.g?"✓":i+1}</div><span style={{fontSize:11}}>{step}</span></div>)}
+                  <div style={{marginTop:12}}>
+                    <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Google Client ID</div>
+                    <div style={{display:"flex",gap:6,marginBottom:9}}><input value={calId.g} onChange={e=>setCalId(p=>({...p,g:e.target.value}))} placeholder="123456789-abc.apps.googleusercontent.com" style={{...INP,flex:1,fontFamily:"monospace",fontSize:10}}/>{calId.g&&<span style={{fontSize:17,display:"flex",alignItems:"center"}}>✅</span>}</div>
+                    <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Microsoft Client ID (optional)</div>
+                    <div style={{display:"flex",gap:6}}><input value={calId.ms} onChange={e=>setCalId(p=>({...p,ms:e.target.value}))} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style={{...INP,flex:1,fontFamily:"monospace",fontSize:10}}/>{calId.ms&&<span style={{fontSize:17,display:"flex",alignItems:"center"}}>✅</span>}</div>
+                  </div>
+                  <div style={{marginTop:12,padding:"9px 12px",background:"#DCFCE7",borderRadius:9,fontSize:11,color:"#15803D"}}>💰 Google Calendar API: <strong>Free</strong> · Microsoft Graph: <strong>Free</strong> · Extra monthly cost: <strong>~$0</strong></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* QUICK ADD */}
+      {showQA&&<div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"white",borderRadius:18,padding:20,width:"100%",maxWidth:430}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontWeight:800,fontSize:15}}>⚡ Quick Add Event</div><button onClick={()=>{setShowQA(false);setQaRes(null);setQaText("");}} style={B("#F1F5F9","#64748B")}>✕</button></div>
+          <div style={{display:"flex",gap:7,marginBottom:9}}>
+            <textarea value={qaText} onChange={e=>setQaText(e.target.value)} placeholder={`e.g. "${family[1]?.name||"Alex"} has a doctor appointment Thursday 2pm"`} style={{flex:1,padding:"9px 10px",borderRadius:9,border:"1px solid #E2E8F0",fontSize:12,resize:"none",height:60,fontFamily:"inherit",outline:"none"}}/>
+            <button onClick={startVoice} style={{width:46,borderRadius:9,border:listening?"2px solid #EF4444":"1px solid #E2E8F0",background:listening?"#FEF2F2":"#F8FAFC",fontSize:20,cursor:"pointer",flexShrink:0}}>{listening?"🔴":"🎙️"}</button>
+          </div>
+          <button onClick={parseQA} disabled={qaLoad||!qaText.trim()} style={B(qaLoad||!qaText.trim()?"#E2E8F0":"#3B82F6",qaLoad||!qaText.trim()?"#94A3B8":"white",{width:"100%",padding:"9px",fontSize:12,marginBottom:9})}>{qaLoad?"⏳ Parsing…":"✨ Parse with AI"}</button>
+          {qaRes&&!qaRes.error&&<div style={{background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:10,padding:12}}><div style={{fontSize:11,fontWeight:700,color:"#15803D",marginBottom:7}}>✅ Extracted:</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 8px",marginBottom:9}}>{Object.entries(qaRes).filter(([k])=>k!=="pid").map(([k,v])=><div key={k} style={{fontSize:11}}><span style={{color:"#64748B",textTransform:"capitalize"}}>{k}: </span><span style={{fontWeight:700}}>{String(v)}</span></div>)}</div><button onClick={()=>{setEvents(p=>[...p,{...qaRes,id:Date.now()}]);setQaText("");setQaRes(null);setShowQA(false);}} style={B("#15803D","white",{width:"100%",padding:"8px",fontSize:12})}>✅ Add to Schedule</button></div>}
+          {qaRes?.error&&<div style={{color:"#EF4444",fontSize:12,padding:"7px",background:"#FEF2F2",borderRadius:8}}>{qaRes.error}</div>}
+        </div>
+      </div>}
+
+      {/* SETTINGS */}
+      {showSet&&<div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"white",borderRadius:18,padding:22,width:"100%",maxWidth:360}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontWeight:800,fontSize:15}}>⚙️ Settings</div><button onClick={()=>setShowSet(false)} style={B("#F1F5F9","#64748B")}>✕</button></div>
+          <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:5}}>🔑 Anthropic API Key</div>
+          <div style={{fontSize:11,color:"#64748B",marginBottom:8}}>Powers AI morning briefing and Quick Add. Uses your $50 credit.</div>
+          <input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-ant-…" style={{...INP,fontFamily:"monospace",marginBottom:10}}/>
+          <button onClick={()=>setShowSet(false)} style={B("#3B82F6","white",{width:"100%",padding:"9px",fontSize:12})}>✅ Save & Close</button>
+          {apiKey&&<div style={{fontSize:11,color:"#16A34A",marginTop:7,textAlign:"center"}}>✅ API key active — AI features enabled</div>}
+          <div style={{marginTop:14,padding:"10px 12px",background:"#F8FAFC",borderRadius:9}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:5}}>📋 How to install on your phone</div>
+            <div style={{fontSize:11,color:"#64748B",marginBottom:3}}>📱 <strong>iPhone:</strong> Open in Safari → Share → Add to Home Screen</div>
+            <div style={{fontSize:11,color:"#64748B"}}>🤖 <strong>Android:</strong> Open in Chrome → Menu → Install App</div>
+          </div>
+        </div>
+      </div>}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
